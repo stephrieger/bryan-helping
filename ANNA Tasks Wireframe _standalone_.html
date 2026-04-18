@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>ANNA — Tasks prototype</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #f3f3f1; display: flex; align-items: center; justify-content: center; min-height: 100vh; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+    #__bundler_loading { position: fixed; bottom: 20px; right: 20px; font: 13px/1.4 -apple-system, BlinkMacSystemFont, sans-serif; color: #666; background: #fff; padding: 8px 14px; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.12); z-index: 10000; }
+    #__bundler_thumbnail { position: fixed; inset: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: #f3f3f1; z-index: 9999; }
+    #__bundler_thumbnail svg { width: 100%; height: 100%; object-fit: contain; }
+    #__bundler_placeholder { color: #999; font-size: 14px; }
+  </style>
+  <noscript>
+    <style>#__bundler_loading { display: none; }</style>
+    <div style="position:fixed;bottom:12px;left:12px;font:13px/1.4 -apple-system,BlinkMacSystemFont,sans-serif;color:#999;background:rgba(255,255,255,0.9);padding:6px 12px;border-radius:6px;box-shadow:0 1px 4px rgba(0,0,0,0.08);z-index:10000;">
+      This page requires JavaScript to display.
+    </div>
+  </noscript>
+</head>
+<body>
+  <div id="__bundler_thumbnail">
+  <svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
+    <rect x="440" y="120" width="320" height="560" rx="36" fill="#ffffff" stroke="#111111" stroke-width="4"></rect>
+    <rect x="560" y="140" width="80" height="16" rx="8" fill="#111111"></rect>
+    <rect x="480" y="200" width="240" height="14" rx="4" fill="#111111"></rect>
+    <rect x="490" y="236" width="44" height="16" rx="8" fill="#111111"></rect>
+    <rect x="548" y="236" width="44" height="16" rx="8" fill="#e5e5e2"></rect>
+    <rect x="606" y="236" width="74" height="16" rx="8" fill="#e5e5e2"></rect>
+    <rect x="540" y="290" width="120" height="44" rx="10" fill="#111111"></rect>
+    <rect x="520" y="350" width="160" height="18" rx="4" fill="#3a3a3a"></rect>
+    <rect x="540" y="378" width="120" height="12" rx="4" fill="#6b6b6b"></rect>
+    <rect x="480" y="430" width="240" height="1" fill="#e5e5e2"></rect>
+    <rect x="490" y="450" width="90" height="12" rx="3" fill="#c0392b"></rect>
+    <rect x="490" y="482" width="160" height="12" rx="3" fill="#111111"></rect>
+    <rect x="490" y="502" width="110" height="10" rx="3" fill="#6b6b6b"></rect>
+    <circle cx="700" cy="492" r="9" fill="none" stroke="#c9c9c4" stroke-width="2"></circle>
+    <rect x="490" y="540" width="160" height="12" rx="3" fill="#111111"></rect>
+    <rect x="490" y="560" width="110" height="10" rx="3" fill="#6b6b6b"></rect>
+    <circle cx="700" cy="550" r="9" fill="none" stroke="#c9c9c4" stroke-width="2"></circle>
+    <rect x="480" y="620" width="240" height="44" rx="12" fill="#111111"></rect>
+  </svg>
+</div>
+  <div id="__bundler_loading">Unpacking...</div>
+
+  <script>
+    
+document.addEventListener('DOMContentLoaded', async function() {
+  const loading = document.getElementById('__bundler_loading');
+  function setStatus(msg) { if (loading) loading.textContent = msg; }
+
+  // Error sink persists across replaceWith since it's on window, not the DOM.
+  window.addEventListener('error', function(e) {
+    var p = document.body || document.documentElement;
+    var d = document.getElementById('__bundler_err') || p.appendChild(document.createElement('div'));
+    d.id = '__bundler_err';
+    d.style.cssText = 'position:fixed;bottom:12px;left:12px;right:12px;font:12px/1.4 ui-monospace,monospace;background:#2a1215;color:#ff8a80;padding:10px 14px;border-radius:8px;border:1px solid #5c2b2e;z-index:99999;white-space:pre-wrap;max-height:40vh;overflow:auto';
+    d.textContent = (d.textContent ? d.textContent + String.fromCharCode(10) : '') +
+      '[bundle] ' + (e.message || e.type) +
+      (e.filename ? ' (' + e.filename.slice(0, 60) + ':' + e.lineno + ')' : '');
+  }, true);
+
+  try {
+    const manifestEl = document.querySelector('script[type="__bundler/manifest"]');
+    const templateEl = document.querySelector('script[type="__bundler/template"]');
+    if (!manifestEl || !templateEl) {
+      setStatus('Error: missing bundle data');
+      console.error('[bundler] Missing script tags — manifestEl:', !!manifestEl, 'templateEl:', !!templateEl);
+      return;
+    }
+
+    const manifest = JSON.parse(manifestEl.textContent);
+    let template = JSON.parse(templateEl.textContent);
+
+    const uuids = Object.keys(manifest);
+    setStatus('Unpacking ' + uuids.length + ' assets...');
+
+    const blobUrls = {};
+    await Promise.all(uuids.map(async (uuid) => {
+      const entry = manifest[uuid];
+      try {
+        const binaryStr = atob(entry.data);
+        const bytes = new Uint8Array(binaryStr.length);
+        for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+
+        let finalBytes = bytes;
+        if (entry.compressed) {
+          if (typeof DecompressionStream !== 'undefined') {
+            const ds = new DecompressionStream('gzip');
+            const writer = ds.writable.getWriter();
+            const reader = ds.readable.getReader();
+            writer.write(bytes);
+            writer.close();
+            const chunks = [];
+            let totalLen = 0;
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              chunks.push(value);
+              totalLen += value.length;
+            }
+            finalBytes = new Uint8Array(totalLen);
+            let offset = 0;
+            for (const chunk of chunks) { finalBytes.set(chunk, offset); offset += chunk.length; }
+          } else {
+            console.warn('DecompressionStream not available, asset ' + uuid + ' may not render');
+          }
+        }
+
+        blobUrls[uuid] = URL.createObjectURL(new Blob([finalBytes], { type: entry.mime }));
+      } catch (err) {
+        console.error('Failed to decode asset ' + uuid + ':', err);
+        blobUrls[uuid] = URL.createObjectURL(new Blob([], { type: entry.mime }));
+      }
+    }));
+
+    const extResEl = document.querySelector('script[type="__bundler/ext_resources"]');
+    const extResources = extResEl ? JSON.parse(extResEl.textContent) : [];
+    const resourceMap = {};
+    for (const entry of extResources) {
+      if (blobUrls[entry.uuid]) resourceMap[entry.id] = blobUrls[entry.uuid];
+    }
+
+    setStatus('Rendering...');
+    for (const uuid of uuids) template = template.split(uuid).join(blobUrls[uuid]);
+
+    // Strip integrity + crossorigin — blob URLs from a file:// document inherit
+    // a null origin, so crossorigin forces a CORS fetch that SRI then rejects.
+    // The manifest bytes are ours; SRI protects against CDN compromise, not this.
+    template = template.replace(/\s+integrity="[^"]*"/gi, '').replace(/\s+crossorigin="[^"]*"/gi, '');
+
+    const resourceScript = '<script>window.__resources = ' +
+      JSON.stringify(resourceMap).split('</' + 'script>').join('<\\/' + 'script>') +
+      ';</' + 'script>';
+    // Inject after <head> so the DOCTYPE stays first; prepending the script
+    // would push the parser into quirks mode. DOMParser always emits a <head>
+    // (synthesizing one if the source HTML omitted it) but may carry
+    // attributes through, so match the full opening tag. slice() rather than
+    // replace() keeps us clear of $-pattern substitution in resourceScript.
+    const headOpen = template.match(/<head[^>]*>/i);
+    if (headOpen) {
+      const i = headOpen.index + headOpen[0].length;
+      template = template.slice(0, i) + resourceScript + template.slice(i);
+    }
+
+    // Parse the template and swap the root element. Scripts inserted via
+    // DOMParser/replaceWith are inert per spec — re-create each with
+    // createElement so they execute, awaiting onload for src scripts to
+    // preserve ordering (React before ReactDOM before Babel before text/babel).
+    const doc = new DOMParser().parseFromString(template, 'text/html');
+    document.documentElement.replaceWith(doc.documentElement);
+    const dead = Array.from(document.scripts);
+    for (const old of dead) {
+      const s = document.createElement('script');
+      for (const a of old.attributes) s.setAttribute(a.name, a.value);
+      s.textContent = old.textContent;
+      // text/babel scripts with a src: fetch and inline. transformScriptTags
+      // does XHR against the src, but blob:null/ from a file:// origin is
+      // silently dropped. Inlining makes it a plain inline babel script,
+      // which transformScriptTags handles unconditionally.
+      if ((s.type === 'text/babel' || s.type === 'text/jsx') && s.src) {
+        const r = await fetch(s.src);
+        s.textContent = await r.text();
+        s.removeAttribute('src');
+      }
+      const p = s.src ? new Promise(function(r) { s.onload = s.onerror = r; }) : null;
+      old.replaceWith(s);
+      if (p) await p;
+    }
+    // Babel standalone auto-transforms type=text/babel on DOMContentLoaded,
+    // which fired before we swapped the document. Trigger manually if present.
+    if (window.Babel && typeof window.Babel.transformScriptTags === 'function') {
+      window.Babel.transformScriptTags();
+    }
+  } catch (err) {
+    setStatus('Error unpacking: ' + err.message);
+    console.error('Bundle unpack error:', err);
+  }
+});
+
+  </script>
+
+  <script type="__bundler/manifest">
+{}
+  </script>
+
+  <script type="__bundler/ext_resources">
+[]
+  </script>
+
+  <script type="__bundler/template">
+"<!DOCTYPE html>\n<html lang=\"en\"><head>\n<meta charset=\"utf-8\">\n<title>ANNA — Tasks prototype<\u002Ftitle>\n<meta name=\"viewport\" content=\"width=1280\">\n<style>\n  :root{\n    --bg:#f3f3f1;\n    --ink:#111;\n    --ink-2:#3a3a3a;\n    --muted:#6b6b6b;\n    --line:#e5e5e2;\n    --line-2:#d9d9d4;\n    --card:#ffffff;\n    --chip:#f1f1ee;\n    --accent:#111;\n    --danger:#c0392b;\n    --ok:#1f7a3a;\n    --radius:14px;\n  }\n  *{box-sizing:border-box}\n  html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);\n    font-family: ui-sans-serif, system-ui, -apple-system, \"Helvetica Neue\", Helvetica, Arial, sans-serif;\n    -webkit-font-smoothing:antialiased;\n  }\n  .canvas{\n    min-height:100vh;\n    padding:40px 32px 80px;\n  }\n  .canvas h1{\n    font-size:15px; font-weight:600; letter-spacing:.02em; margin:0 0 4px;\n  }\n  .canvas .sub{\n    font-size:13px; color:var(--muted); margin:0 0 28px; max-width:760px;\n  }\n  .grid{\n    display:grid; grid-template-columns: repeat(2, minmax(360px, 420px));\n    gap:48px; justify-content:start; align-items:start;\n  }\n  .col h2{\n    font-size:12px; text-transform:uppercase; letter-spacing:.12em;\n    color:var(--muted); font-weight:600; margin:0 0 4px;\n  }\n  .col .desc{ font-size:12.5px; color:var(--ink-2); margin:0 0 14px; line-height:1.5;}\n  .phone-wrap{ display:flex; flex-direction:column; align-items:flex-start; }\n  .phone{\n    width:390px; height:780px;\n    background:#fff;\n    border-radius:44px;\n    border:1px solid #111;\n    box-shadow: 0 24px 60px -30px rgba(0,0,0,.25), 0 2px 0 rgba(0,0,0,.04);\n    position:relative; overflow:hidden;\n  }\n  .phone.alt{\n    border-radius:28px;\n  }\n  .notch{\n    position:absolute; top:10px; left:50%; transform:translateX(-50%);\n    width:110px; height:28px; background:#111; border-radius:20px; z-index:20;\n  }\n  .phone.alt .notch{display:none}\n  .statusbar{\n    position:absolute; top:0; left:0; right:0; height:44px;\n    display:flex; align-items:center; justify-content:space-between;\n    padding:0 26px; font-size:12px; font-weight:600; color:#111; z-index:10;\n  }\n  .statusbar .right{display:flex; gap:6px; align-items:center;}\n  .statusbar .dot{ width:14px; height:8px; background:#111; border-radius:2px;}\n  .screen{\n    position:absolute; inset:44px 0 0 0;\n    display:flex; flex-direction:column;\n    background:#fff;\n  }\n\n  /* Header */\n  .hdr{\n    padding:16px 20px 10px; border-bottom:1px solid var(--line);\n    background:#fff;\n  }\n  .hdr h3{\n    margin:0 0 12px; font-size:17px; font-weight:700; letter-spacing:-.01em; text-align:center;\n  }\n  .tabs{ display:flex; gap:8px; justify-content:center;}\n  .tab{\n    display:inline-flex; align-items:center; gap:6px;\n    padding:5px 10px; border-radius:999px; font-size:12px;\n    background:var(--chip); color:var(--ink-2);\n    border:1px solid transparent; cursor:pointer; user-select:none;\n    transition: background .15s, color .15s, border-color .15s;\n  }\n  .tab .count{\n    display:inline-flex; align-items:center; justify-content:center;\n    min-width:18px; height:18px; padding:0 5px; font-size:11px; font-weight:600;\n    background:#fff; border:1px solid var(--line-2); border-radius:999px;\n  }\n  .tab.active{ background:#111; color:#fff;}\n  .tab.active .count{ background:#fff; color:#111; border-color:#111;}\n  .tab.done{ background:#eef6f0; color:#1f7a3a;}\n  .tab.done .count{ display:none;}\n  .tab.done .check{ display:inline;}\n  .tab .check{ display:none; font-weight:700;}\n  .phone.alt .tab{ border-radius:6px;}\n\n  /* Task frame */\n  .task-frame{\n    flex:1; display:flex; flex-direction:column; min-height:0;\n    position:relative;\n  }\n  .task-nav{\n    display:flex; align-items:center; justify-content:space-between;\n    padding:10px 14px; border-bottom:1px solid var(--line); background:#fff;\n  }\n  .task-nav .title{ font-size:14px; font-weight:600;}\n  .chev{\n    width:30px; height:30px; border-radius:999px;\n    display:inline-flex; align-items:center; justify-content:center;\n    color:#111; cursor:pointer; background:transparent; border:0;\n  }\n  .chev:disabled{ color:#c8c8c5; cursor:not-allowed;}\n  .chev:hover:not(:disabled){ background:var(--chip);}\n  .phone.alt .task-nav{ background:#fafaf8;}\n\n  .task-scroll{\n    flex:1; overflow-y:auto; background:#fff;\n    scrollbar-gutter: stable;\n  }\n  .task-scroll::-webkit-scrollbar{ width:8px;}\n  .task-scroll::-webkit-scrollbar-thumb{ background:#d5d5d1; border-radius:999px;}\n  .task-scroll::-webkit-scrollbar-track{ background:transparent;}\n\n  /* Transaction summary */\n  .txn{\n    text-align:center; padding:22px 20px 18px; border-bottom:1px solid var(--line);\n  }\n  .avatar{\n    width:44px; height:44px; border-radius:10px; display:inline-flex;\n    align-items:center; justify-content:center; font-size:12px; font-weight:700;\n    color:#fff; margin-bottom:10px;\n  }\n  .avatar.ms{ background:#111;}\n  .avatar.snack{ background:#8a7cc9;}\n  .amount{ font-size:26px; font-weight:700; letter-spacing:-.01em;}\n  .merchant{ font-size:13px; color:var(--ink-2); margin-top:2px;}\n  .txn-date{ font-size:12px; color:var(--muted); margin-top:2px;}\n  .more-details{\n    display:flex; align-items:center; justify-content:space-between;\n    padding:12px 20px; border-bottom:1px solid var(--line);\n    font-size:13px; color:var(--ink-2); cursor:pointer;\n  }\n  .more-details .caret{ transition: transform .2s;}\n  .more-details.open .caret{ transform: rotate(180deg);}\n  .details-body{\n    display:none; padding:0 20px 14px; font-size:12.5px; color:var(--muted); line-height:1.55;\n    border-bottom:1px solid var(--line);\n  }\n  .details-body.open{ display:block;}\n  .details-body dl{ margin:0; display:grid; grid-template-columns: 110px 1fr; row-gap:6px;}\n  .details-body dt{ color:var(--muted);}\n  .details-body dd{ margin:0; color:var(--ink-2);}\n\n  /* Section */\n  .section-title{\n    display:flex; align-items:center; justify-content:center; gap:8px;\n    padding:14px 20px 12px; font-size:13px; font-weight:600; color:var(--ink);\n  }\n  .section-title .ic{ width:14px; height:14px; display:inline-block;}\n\n  .suggested-label{\n    padding:0 20px 8px; font-size:12px; color:var(--danger); font-weight:600;\n  }\n\n  /* Transaction option row */\n  .opt{\n    display:flex; align-items:center; gap:12px; padding:12px 20px;\n    border-top:1px solid var(--line);\n    cursor:pointer;\n  }\n  .opt:hover{ background:#fafaf8;}\n  .opt .meta{ flex:1; min-width:0;}\n  .opt .amt{ font-size:13.5px; font-weight:600;}\n  .opt .sub{ font-size:12px; color:var(--muted); margin-top:1px;}\n  .radio{\n    width:20px; height:20px; border-radius:999px; border:1.5px solid #c9c9c4;\n    display:inline-flex; align-items:center; justify-content:center; flex:none;\n    background:#fff;\n  }\n  .opt.selected .radio{ border-color:#111; background:#111;}\n  .opt.selected .radio::after{\n    content:\"\"; width:8px; height:8px; border-radius:999px; background:#fff;\n  }\n\n  .all-trans{\n    display:flex; align-items:center; justify-content:space-between;\n    padding:12px 20px; border-top:1px solid var(--line);\n    font-size:13px; color:var(--ink-2); cursor:pointer;\n  }\n  .all-trans .caret{ transition: transform .2s;}\n  .all-trans.open .caret{ transform: rotate(180deg);}\n  .search-bar{\n    display:none; align-items:center; gap:16px; padding:8px 20px;\n    border-top:1px solid var(--line); color:var(--muted); font-size:13px;\n  }\n  .search-bar.open{ display:flex;}\n  .all-list{ display:none;}\n  .all-list.open{ display:block;}\n\n  .add-txn{\n    border-top:1px solid var(--line); padding:14px 20px; text-align:center;\n    font-size:13.5px; font-weight:500; cursor:pointer; background:#fff;\n  }\n  .add-txn:hover{ background:#fafaf8;}\n\n  /* VAT */\n  .vat-body{ padding:18px 20px;}\n  .vat-body label{ display:block; font-size:12px; color:var(--muted); margin-bottom:6px;}\n  .vat-input{\n    width:100%; padding:12px 14px; font-size:16px; border:1px solid var(--line-2);\n    border-radius:10px; background:#fff; outline:none; font-family:inherit;\n  }\n  .vat-input:focus{ border-color:#111;}\n  .vat-btns{\n    display:flex; gap:8px; margin-top:14px; flex-wrap:wrap;\n  }\n  .vat-btn{\n    flex:1; min-width:60px; padding:10px 12px; background:var(--chip);\n    border:1px solid transparent; border-radius:10px; font-size:13px; font-weight:500;\n    color:var(--ink); cursor:pointer; font-family:inherit;\n  }\n  .vat-btn:hover{ background:#e9e9e5;}\n  .vat-btn.receipt{ display:flex; align-items:center; justify-content:center; gap:6px;}\n\n  /* Categorize */\n  .cat-body{ padding:18px 20px;}\n  .cat-body label{ display:block; font-size:12px; color:var(--muted); margin-bottom:6px;}\n  .cat-select{\n    width:100%; padding:12px 14px; font-size:14px; border:1px solid var(--line-2);\n    border-radius:10px; background:#fff;\n    appearance:none; -webkit-appearance:none;\n    background-image: url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path fill='none' stroke='%23111' stroke-width='1.5' d='M1 1.5l5 5 5-5'/><\u002Fsvg>\");\n    background-repeat:no-repeat; background-position: right 14px center;\n    font-family:inherit;\n  }\n\n  /* Submit */\n  .submit-bar{\n    padding:14px 20px 20px; background:#fff; border-top:1px solid var(--line);\n  }\n  .btn-primary{\n    width:100%; padding:14px; border:0; border-radius:12px;\n    background:#111; color:#fff; font-size:14px; font-weight:600;\n    cursor:pointer; font-family:inherit;\n  }\n  .btn-primary:disabled{ background:#c9c9c4; cursor:not-allowed;}\n  .phone.alt .btn-primary{ border-radius:6px;}\n\n  /* Done state */\n  .done-wrap{\n    flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;\n    text-align:center; padding:40px 30px;\n  }\n  .done-ic{\n    width:56px; height:56px; border-radius:999px; background:#eef6f0;\n    display:flex; align-items:center; justify-content:center; color:#1f7a3a;\n    font-size:28px; font-weight:700; margin-bottom:16px;\n  }\n  .done-wrap h3{ margin:0 0 6px; font-size:18px;}\n  .done-wrap p{ margin:0; color:var(--muted); font-size:13px; line-height:1.5;}\n\n  /* Swipe feedback */\n  .task-scroll.swiping{ transition: transform .15s; }\n\n  /* Toast */\n  .toast{\n    position:absolute; left:50%; bottom:90px; transform:translateX(-50%);\n    background:#111; color:#fff; padding:10px 14px; border-radius:999px;\n    font-size:12px; opacity:0; pointer-events:none; transition: opacity .25s;\n    z-index:30;\n  }\n  .toast.show{ opacity:1;}\n\n  /* ALT direction specific */\n  .phone.alt .hdr h3{ font-size:14px; font-weight:600; text-transform:uppercase; letter-spacing:.08em;}\n  .phone.alt .amount{ font-weight:800;}\n  .phone.alt .btn-primary{ background:#111;}\n  .phone.alt .task-scroll{ background:#fafaf8;}\n  .phone.alt .txn,\n  .phone.alt .more-details,\n  .phone.alt .details-body,\n  .phone.alt .opt,\n  .phone.alt .all-trans,\n  .phone.alt .search-bar{ background:#fff;}\n  .phone.alt .task-scroll > *{ background:#fff;}\n  .phone.alt .section-title{ background:#fafaf8; text-transform:uppercase; font-size:11px; letter-spacing:.1em; color:var(--muted); font-weight:600;}\n  .phone.alt .suggested-label{ background:#fafaf8;}\n\n  .legend{\n    margin-top:14px; font-size:11.5px; color:var(--muted); line-height:1.6;\n    max-width:390px;\n  }\n  .legend b{ color:var(--ink-2); font-weight:600;}\n  .kbd{\n    display:inline-block; padding:1px 6px; border:1px solid var(--line-2);\n    border-radius:4px; font-size:10.5px; background:#fff; color:var(--ink-2);\n    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;\n  }\n<\u002Fstyle>\n<\u002Fhead>\n<body>\n\n\n\n<div class=\"canvas\">\n  <h1>ANNA — Missing info: tasks flow<\u002Fh1>\n  <p class=\"sub\">Two mid-fi wireframe directions. Swipe, tap tabs, or use the chevrons to move between tasks. Submitting a task checks off its tab, decrements the count and auto-advances to the next category with work to do.<\u002Fp>\n\n  <div class=\"grid\">\n\n    <div class=\"col\">\n      <h2>Direction A — Faithful<\u002Fh2>\n      <p class=\"desc\">Sticks closely to the screenshots: rounded card container feel, high-contrast submit, light chrome. Default ANNA-ish clean surface.<\u002Fp>\n      <div class=\"phone-wrap\">\n        <div class=\"phone\" data-variant=\"A\" id=\"phoneA\">\n          <div class=\"notch\"><\u002Fdiv>\n          <div class=\"statusbar\">\n            <span>9:41<\u002Fspan>\n            <span class=\"right\"><span>􀙇<\u002Fspan><span>􀛨<\u002Fspan><span class=\"dot\"><\u002Fspan><\u002Fspan>\n          <\u002Fdiv>\n          <div class=\"screen\"><!-- rendered --><\u002Fdiv>\n          <div class=\"toast\">Saved<\u002Fdiv>\n        <\u002Fdiv>\n        <p class=\"legend\">\n          <b>Try:<\u002Fb> swipe left/right on the card body · tap tabs · press <span class=\"kbd\">←<\u002Fspan>/<span class=\"kbd\">→<\u002Fspan> · expand <i>More details<\u002Fi> · open <i>All transactions<\u002Fi> · tap the VAT percentage buttons · open the category select.\n        <\u002Fp>\n      <\u002Fdiv>\n    <\u002Fdiv>\n\n    <div class=\"col\">\n      <h2>Direction B — Squarer, denser<\u002Fh2>\n      <p class=\"desc\">Same structure, different framing: squared corners, muted section dividers between panels, uppercase section labels. Feels more like a ledger.<\u002Fp>\n      <div class=\"phone-wrap\">\n        <div class=\"phone alt\" data-variant=\"B\" id=\"phoneB\">\n          <div class=\"notch\"><\u002Fdiv>\n          <div class=\"statusbar\">\n            <span>9:41<\u002Fspan>\n            <span class=\"right\"><span>􀙇<\u002Fspan><span>􀛨<\u002Fspan><span class=\"dot\"><\u002Fspan><\u002Fspan>\n          <\u002Fdiv>\n          <div class=\"screen\"><\u002Fdiv>\n          <div class=\"toast\">Saved<\u002Fdiv>\n        <\u002Fdiv>\n        <p class=\"legend\">\n          Both prototypes are independent — complete one without affecting the other.\n        <\u002Fp>\n      <\u002Fdiv>\n    <\u002Fdiv>\n\n  <\u002Fdiv>\n<\u002Fdiv>\n\n<script>\n/* -------- Data model -------- */\nfunction makeState(){\n  return {\n    tasks: [\n      { id:'match', label:'Match', count:2, done:false,\n        merchant:'M&S Simply Food', amount:'£25.00', date:'13 Oct, 2025',\n        avatar:{text:'M&S', cls:'ms'},\n        selected:null, allOpen:false,\n      },\n      { id:'vat', label:'VAT', count:2, done:false,\n        merchant:'Snack shop Glasgow Central', amount:'£3.50', date:'13 Oct, 2025',\n        avatar:{text:'SS', cls:'snack'},\n        vat:'', total:3.50,\n      },\n      { id:'cat', label:'Categorize', count:1, done:false,\n        merchant:'M&S Simply Food', amount:'£25.00', date:'13 Oct, 2025',\n        avatar:{text:'M&S', cls:'ms'},\n        category:'',\n      },\n    ],\n    idx:0,\n  };\n}\n\n/* -------- Rendering -------- */\nfunction render(phone, state){\n  const screen = phone.querySelector('.screen');\n  const total = state.tasks.reduce((a,t)=>a+(t.done?0:t.count),0);\n  const allDone = state.tasks.every(t=>t.done);\n  const task = state.tasks[state.idx];\n\n  screen.innerHTML = `\n    <div class=\"hdr\">\n      <h3>${allDone ? 'All caught up' : total + ' require attention'}<\u002Fh3>\n      <div class=\"tabs\">\n        ${state.tasks.map((t,i)=>`\n          <button class=\"tab ${i===state.idx?'active':''} ${t.done?'done':''}\" data-tab=\"${i}\">\n            <span>${t.label}<\u002Fspan>\n            <span class=\"check\">✓<\u002Fspan>\n            <span class=\"count\">${t.count}<\u002Fspan>\n          <\u002Fbutton>\n        `).join('')}\n      <\u002Fdiv>\n    <\u002Fdiv>\n    ${ allDone ? renderDone() : renderTask(task, state) }\n  `;\n\n  wire(phone, state);\n}\n\nfunction renderDone(){\n  return `\n    <div class=\"done-wrap\">\n      <div class=\"done-ic\">✓<\u002Fdiv>\n      <h3>All caught up<\u002Fh3>\n      <p>You've reviewed every transaction that needed attention. We'll ping you when the next one lands.<\u002Fp>\n    <\u002Fdiv>\n  `;\n}\n\nfunction renderTask(t, state){\n  const navTitle = t.id==='match' ? 'Match to a transaction'\n                  : t.id==='vat' ? 'Enter VAT (optional)'\n                  : 'Choose accounting category';\n  const prevDisabled = state.idx===0;\n  const nextDisabled = state.idx===state.tasks.length-1;\n\n  return `\n    <div class=\"task-frame\">\n      <div class=\"task-nav\">\n        <button class=\"chev\" data-nav=\"prev\" ${prevDisabled?'disabled':''}>‹<\u002Fbutton>\n        <div class=\"title\">${navTitle}<\u002Fdiv>\n        <button class=\"chev\" data-nav=\"next\" ${nextDisabled?'disabled':''}>›<\u002Fbutton>\n      <\u002Fdiv>\n      <div class=\"task-scroll\" data-scroll>\n        <div class=\"txn\">\n          <div class=\"avatar ${t.avatar.cls}\">${t.avatar.text}<\u002Fdiv>\n          <div class=\"amount\">${t.amount}<\u002Fdiv>\n          <div class=\"merchant\">${t.merchant}<\u002Fdiv>\n          <div class=\"txn-date\">${t.date}<\u002Fdiv>\n        <\u002Fdiv>\n        <div class=\"more-details\" data-more>\n          <span>More details<\u002Fspan>\n          <span class=\"caret\">▾<\u002Fspan>\n        <\u002Fdiv>\n        <div class=\"details-body\" data-details>\n          <dl>\n            <dt>Paid with<\u002Fdt><dd>ANNA card •• 4021<\u002Fdd>\n            <dt>Category<\u002Fdt><dd>Uncategorised<\u002Fdd>\n            <dt>Reference<\u002Fdt><dd>TXN-${(Math.random()*1e6|0).toString(36).toUpperCase()}<\u002Fdd>\n            <dt>Posted<\u002Fdt><dd>${t.date} · 14:22<\u002Fdd>\n          <\u002Fdl>\n        <\u002Fdiv>\n        ${ t.id==='match' ? renderMatch(t)\n          : t.id==='vat' ? renderVat(t)\n          : renderCat(t) }\n      <\u002Fdiv>\n      <div class=\"submit-bar\">\n        <button class=\"btn-primary\" data-submit ${canSubmit(t)?'':'disabled'}>\n          ${ t.id==='match' ? 'Confirm match' : t.id==='vat' ? 'Save VAT' : 'Save category' }\n        <\u002Fbutton>\n      <\u002Fdiv>\n    <\u002Fdiv>\n  `;\n}\n\nfunction canSubmit(t){\n  if(t.id==='match') return t.selected!=null;\n  if(t.id==='vat')   return true; // optional\n  if(t.id==='cat')   return !!t.category;\n  return false;\n}\n\nfunction renderMatch(t){\n  const suggested = [\n    {amt:'£25.00', sub:'Crow Road outlet · 13 Oct 2025'},\n    {amt:'£25.00', sub:'Crow Road outlet · 14 Oct 2025'},\n  ];\n  const all = Array.from({length:6}).map(()=>({amt:'£25.00', sub:'Transaction'}));\n  return `\n    <div class=\"section-title\">\n      <span>⇄ Select the matching transaction<\u002Fspan>\n    <\u002Fdiv>\n    <div class=\"suggested-label\">2 suggested<\u002Fdiv>\n    ${ suggested.map((s,i)=>`\n      <div class=\"opt ${t.selected==='s'+i?'selected':''}\" data-opt=\"s${i}\">\n        <div class=\"meta\">\n          <div class=\"amt\">${s.amt}<\u002Fdiv>\n          <div class=\"sub\">${s.sub}<\u002Fdiv>\n        <\u002Fdiv>\n        <span class=\"radio\"><\u002Fspan>\n      <\u002Fdiv>\n    `).join('') }\n    <div class=\"all-trans ${t.allOpen?'open':''}\" data-alltoggle>\n      <span>All transactions<\u002Fspan>\n      <span class=\"caret\">▾<\u002Fspan>\n    <\u002Fdiv>\n    <div class=\"search-bar ${t.allOpen?'open':''}\">\n      <span>⌕<\u002Fspan><span>⇅<\u002Fspan><span>≡<\u002Fspan>\n    <\u002Fdiv>\n    <div class=\"all-list ${t.allOpen?'open':''}\">\n      ${ all.map((s,i)=>`\n        <div class=\"opt ${t.selected==='a'+i?'selected':''}\" data-opt=\"a${i}\">\n          <div class=\"meta\">\n            <div class=\"amt\">${s.amt}<\u002Fdiv>\n            <div class=\"sub\">${s.sub}<\u002Fdiv>\n          <\u002Fdiv>\n          <span class=\"radio\"><\u002Fspan>\n        <\u002Fdiv>\n      `).join('') }\n    <\u002Fdiv>\n    <div class=\"add-txn\">+ Add a transaction<\u002Fdiv>\n  `;\n}\n\nfunction renderVat(t){\n  const val = t.vat===''? '' : Number(t.vat).toFixed(2);\n  return `\n    <div class=\"vat-body\">\n      <label>VAT<\u002Flabel>\n      <div style=\"position:relative\">\n        <span style=\"position:absolute; left:14px; top:50%; transform:translateY(-50%); color:#6b6b6b\">£<\u002Fspan>\n        <input class=\"vat-input\" data-vat value=\"${val}\" placeholder=\"\" inputmode=\"decimal\" style=\"padding-left:26px\" />\n      <\u002Fdiv>\n      <div class=\"vat-btns\">\n        <button class=\"vat-btn\" data-vatpct=\"20\">20%<\u002Fbutton>\n        <button class=\"vat-btn\" data-vatpct=\"5\">5%<\u002Fbutton>\n        <button class=\"vat-btn\" data-vatpct=\"0\">0%<\u002Fbutton>\n        <button class=\"vat-btn receipt\">📎 Receipt<\u002Fbutton>\n      <\u002Fdiv>\n      <p style=\"font-size:11.5px; color:#6b6b6b; margin:14px 0 0; line-height:1.5\">\n        VAT is inclusive of the £${t.total.toFixed(2)} total.\n      <\u002Fp>\n    <\u002Fdiv>\n  `;\n}\n\nfunction renderCat(t){\n  return `\n    <div class=\"cat-body\">\n      <label>Accounting category<\u002Flabel>\n      <select class=\"cat-select\" data-cat>\n        <option value=\"\" ${t.category===''?'selected':''}>Select<\u002Foption>\n        <option value=\"Office supplies\" ${t.category==='Office supplies'?'selected':''}>Office supplies<\u002Foption>\n        <option value=\"Entertainment\"   ${t.category==='Entertainment'?'selected':''}>Entertainment<\u002Foption>\n        <option value=\"Equipment\"       ${t.category==='Equipment'?'selected':''}>Equipment<\u002Foption>\n      <\u002Fselect>\n    <\u002Fdiv>\n  `;\n}\n\n/* -------- Behaviour -------- */\nfunction wire(phone, state){\n  const root = phone.querySelector('.screen');\n\n  // Tabs\n  root.querySelectorAll('[data-tab]').forEach(el=>{\n    el.addEventListener('click', ()=>{\n      const i = +el.dataset.tab;\n      if(state.tasks[i].done) return; // skip done\n      state.idx = i; render(phone, state);\n    });\n  });\n\n  // Chevrons\n  const prev = root.querySelector('[data-nav=\"prev\"]');\n  const next = root.querySelector('[data-nav=\"next\"]');\n  if(prev) prev.addEventListener('click', ()=> goRel(phone, state, -1));\n  if(next) next.addEventListener('click', ()=> goRel(phone, state, +1));\n\n  // More details\n  const md = root.querySelector('[data-more]');\n  const db = root.querySelector('[data-details]');\n  if(md && db){\n    md.addEventListener('click', ()=>{\n      md.classList.toggle('open');\n      db.classList.toggle('open');\n    });\n  }\n\n  // Match-specific\n  root.querySelectorAll('[data-opt]').forEach(el=>{\n    el.addEventListener('click', ()=>{\n      const task = state.tasks[state.idx];\n      task.selected = el.dataset.opt;\n      render(phone, state);\n    });\n  });\n  const allt = root.querySelector('[data-alltoggle]');\n  if(allt) allt.addEventListener('click', ()=>{\n    const task = state.tasks[state.idx];\n    task.allOpen = !task.allOpen;\n    render(phone, state);\n  });\n\n  // VAT\n  const vatInput = root.querySelector('[data-vat]');\n  if(vatInput){\n    vatInput.addEventListener('input', e=>{\n      const task = state.tasks[state.idx];\n      const raw = e.target.value.replace(/[^0-9.]/g,'');\n      task.vat = raw;\n    });\n  }\n  root.querySelectorAll('[data-vatpct]').forEach(el=>{\n    el.addEventListener('click', ()=>{\n      const task = state.tasks[state.idx];\n      const pct = +el.dataset.vatpct;\n      // VAT-inclusive calc: vat = total * pct / (100 + pct)\n      const vat = task.total * pct / (100 + pct);\n      task.vat = vat.toFixed(2);\n      render(phone, state);\n    });\n  });\n\n  // Categorize\n  const catSel = root.querySelector('[data-cat]');\n  if(catSel){\n    catSel.addEventListener('change', e=>{\n      state.tasks[state.idx].category = e.target.value;\n      render(phone, state);\n    });\n  }\n\n  // Submit\n  const submit = root.querySelector('[data-submit]');\n  if(submit){\n    submit.addEventListener('click', ()=>{\n      if(submit.disabled) return;\n      const t = state.tasks[state.idx];\n      // Decrement; if 0 mark done\n      t.count = Math.max(0, t.count - 1);\n      // Reset per-task working state so the next instance is \"fresh\"\n      if(t.id==='match'){ t.selected=null; t.allOpen=false; }\n      if(t.id==='vat'){ t.vat=''; }\n      if(t.id==='cat'){ t.category=''; }\n      if(t.count===0){ t.done = true; }\n      toast(phone, 'Saved');\n      // Advance to next non-done tab if any\n      const nextIdx = findNextOpen(state, state.idx);\n      if(nextIdx!=null) state.idx = nextIdx;\n      render(phone, state);\n    });\n  }\n\n  // Swipe\n  attachSwipe(phone, state);\n}\n\nfunction findNextOpen(state, from){\n  const n = state.tasks.length;\n  // search forward then wrap\n  for(let i=1;i<=n;i++){\n    const j = (from + i) % n;\n    if(!state.tasks[j].done) return j;\n  }\n  return null;\n}\n\nfunction goRel(phone, state, dir){\n  const n = state.tasks.length;\n  let i = state.idx;\n  for(let step=0; step<n; step++){\n    i += dir;\n    if(i<0 || i>=n) return; // clamp at ends\n    if(!state.tasks[i].done){ state.idx = i; render(phone, state); return; }\n  }\n}\n\nfunction attachSwipe(phone, state){\n  const scroll = phone.querySelector('[data-scroll]');\n  if(!scroll) return;\n  let x0=null, y0=null, dx=0, dy=0, locked=null;\n  scroll.addEventListener('touchstart', e=>{\n    const t = e.touches[0]; x0=t.clientX; y0=t.clientY; dx=0; dy=0; locked=null;\n  }, {passive:true});\n  scroll.addEventListener('touchmove', e=>{\n    if(x0==null) return;\n    const t = e.touches[0]; dx = t.clientX - x0; dy = t.clientY - y0;\n    if(!locked){\n      if(Math.abs(dx)>8 || Math.abs(dy)>8){\n        locked = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';\n      }\n    }\n    if(locked==='x'){\n      scroll.style.transform = `translateX(${dx*0.4}px)`;\n    }\n  }, {passive:true});\n  scroll.addEventListener('touchend', ()=>{\n    scroll.classList.add('swiping');\n    scroll.style.transform = '';\n    setTimeout(()=>scroll.classList.remove('swiping'), 160);\n    if(locked==='x' && Math.abs(dx)>60){\n      goRel(phone, state, dx<0 ? +1 : -1);\n    }\n    x0=null;\n  });\n\n  // Mouse drag (so it works in the canvas too)\n  let mx0=null, my0=null, mdx=0, mdy=0, mlocked=null, down=false;\n  scroll.addEventListener('mousedown', e=>{\n    down=true; mx0=e.clientX; my0=e.clientY; mdx=0; mdy=0; mlocked=null;\n  });\n  window.addEventListener('mousemove', e=>{\n    if(!down) return;\n    mdx = e.clientX - mx0; mdy = e.clientY - my0;\n    if(!mlocked){\n      if(Math.abs(mdx)>8 || Math.abs(mdy)>8){\n        mlocked = Math.abs(mdx) > Math.abs(mdy) ? 'x' : 'y';\n      }\n    }\n    if(mlocked==='x'){\n      scroll.style.transform = `translateX(${mdx*0.35}px)`;\n      e.preventDefault();\n    }\n  });\n  window.addEventListener('mouseup', ()=>{\n    if(!down) return;\n    down=false;\n    scroll.classList.add('swiping');\n    scroll.style.transform='';\n    setTimeout(()=>scroll.classList.remove('swiping'), 160);\n    if(mlocked==='x' && Math.abs(mdx)>60){\n      goRel(phone, state, mdx<0 ? +1 : -1);\n    }\n  });\n}\n\nfunction toast(phone, msg){\n  const t = phone.querySelector('.toast');\n  t.textContent = msg;\n  t.classList.add('show');\n  clearTimeout(t._to);\n  t._to = setTimeout(()=>t.classList.remove('show'), 1100);\n}\n\n/* -------- Boot -------- */\nconst stateA = makeState();\nconst stateB = makeState();\nconst phoneA = document.getElementById('phoneA');\nconst phoneB = document.getElementById('phoneB');\nrender(phoneA, stateA);\nrender(phoneB, stateB);\n\n/* Keyboard nav on the focused phone (last interacted) */\nlet focusPhone = phoneA, focusState = stateA;\n[phoneA, phoneB].forEach(p=>{\n  p.addEventListener('mousedown', ()=>{\n    focusPhone = p;\n    focusState = (p===phoneA) ? stateA : stateB;\n  });\n});\nwindow.addEventListener('keydown', e=>{\n  if(e.key==='ArrowLeft')  goRel(focusPhone, focusState, -1);\n  if(e.key==='ArrowRight') goRel(focusPhone, focusState, +1);\n});\n<\u002Fscript>\n\n\n\n<\u002Fbody><\u002Fhtml>"
+  </script>
+</body>
+</html>
